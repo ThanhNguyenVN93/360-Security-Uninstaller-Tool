@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36623.8 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "frm360security", "frm360security.csproj", "{C693BCD4-5B6B-4AF8-9AF3-0C5A776FBEBD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C693BCD4-5B6B-4AF8-9AF3-0C5A776FBEBD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C693BCD4-5B6B-4AF8-9AF3-0C5A776FBEBD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C693BCD4-5B6B-4AF8-9AF3-0C5A776FBEBD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C693BCD4-5B6B-4AF8-9AF3-0C5A776FBEBD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4136A697-21DC-406F-9097-AF1B9700C75C}
+	EndGlobalSection
+EndGlobal
