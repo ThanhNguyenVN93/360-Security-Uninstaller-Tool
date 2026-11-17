@@ -286,88 +286,93 @@ namespace frm360security
                 // ...
             }
         }
-        private void btnuninstall_Click(object sender, EventArgs e)
+        private async void btnuninstall_Click(object sender, EventArgs e)
         {
-            // Sử dụng thư viện System.IO; và System.Diagnostics;
             string programFilesPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-
-            // 1. Dùng Path.Combine để ghép đường dẫn an toàn
             string folderPath = Path.Combine(programFilesPath, "360", "Total Security");
-            string filePath = Path.Combine(folderPath, "Uninstall.exe"); // Phát hiện file đã tồn tại
+            string filePath = Path.Combine(folderPath, "Uninstall.exe");
             try
             {
-                // Kiểm tra ĐỦ CẢ 2 điều kiện: Thư mục tồn tại VÀ File Uninstall.exe tồn tại
                 if (Directory.Exists(folderPath) && File.Exists(filePath))
                 {
-                    // 2. CHƯƠNG TRÌNH ĐÃ CÀI ĐẶT
-                    // Khởi chạy quá trình gỡ cài đặt
+                    btnuninstall.Enabled = false;
+                    lblstatus.Text = Properties._string.Uninstalling;
                     ProcessStartInfo startInfo = new ProcessStartInfo
                     {
                         FileName = filePath,
-                        Arguments = "/S", // Tham số gỡ cài đặt im lặng (nếu hỗ trợ)
+                        Arguments = "/S",
                         UseShellExecute = true,
-                        Verb = "runas" // Chạy với quyền quản trị nếu cần
+                        Verb = "runas"
                     };
                     Process uninstallProcess = Process.Start(startInfo);
-                    uninstallProcess.WaitForExit(); // Chờ quá trình gỡ cài đặt kết thúc
-                    //MessageBox.Show("Gỡ cài đặt hoàn tất!", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    //Application.Exit();
-                }
-                else
-                {
-                    // 3. CHƯƠNG TRÌNH CHƯA CÀI ĐẶT
-                    //MessageBox.Show("Chưa cài đặt 360 Total Security.", "Thông Báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    await Task.Run(() => uninstallProcess.WaitForExit());
+                    lblstatus.Text = Properties._string.UninstallComplete;
+                    btnclean.Enabled = true;
+                    btnclean.PerformClick();
                 }
             }
             catch (Exception ex)
             {
-                // Xử lý lỗi nếu có vấn đề về quyền truy cập hoặc hệ thống
                 MessageBox.Show($"Lỗi khi cố gắng gỡ cài đặt: {ex.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                // ...
+                btnuninstall.Enabled = true;
             }
-
         }
 
-        private void btnclean_Click(object sender, EventArgs e)
+        private async void btnclean_Click(object sender, EventArgs e)
         {
-            //đường dẫn cài đặt 360 Total Security
-            string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "360");
             try
             {
-                if (Directory.Exists(filePath))
+                btnclean.Enabled = false;
+                lblstatus.Text = Properties._string.CleaningUp;
+
+                var foldersToDelete = new System.Collections.Generic.List<string>();
+                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "360"));
+                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360Safe"));
+                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360"));
+                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360TotalSecurity"));
+                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360Quarant"));
+                foldersToDelete.Add(@"C:\360SANDBOX");
+
+                string usersRoot = Path.GetDirectoryName(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+                if (Directory.Exists(usersRoot))
                 {
-                    // Khởi chạy quá trình dọn dẹp
-                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    foreach (var userDir in Directory.GetDirectories(usersRoot))
                     {
-                        //xoá folder cài đặt 360 Total Security
-                        FileName = "cmd.exe",
-                        Arguments = $"/C rmdir /S /Q \"{filePath}\"",// Lệnh xoá thư mục và tất cả nội dung bên trong
-                        Verb = "runas" // Chạy với quyền quản trị nếu cần
-                    };
-                    Process cleanProcess = Process.Start(startInfo);
-                    cleanProcess.WaitForExit(); // Chờ quá trình dọn dẹp kết thúc
-                                                // 🌟 THAY THẾ CHO THÔNG BÁO THÀNH CÔNG:
-                                                // CŨ: MessageBox.Show("Dọn dẹp hoàn tất!", "Thành công", ...
-                    MessageBox.Show(Properties._string.CleanupCompleteMessage,Properties._string.SuccessTitle,MessageBoxButtons.OK,MessageBoxIcon.Information);
-                    Application.Exit();
+                        string roaming = Path.Combine(userDir, "AppData", "Roaming");
+                        string local = Path.Combine(userDir, "AppData", "Local");
+                        string localLow = Path.Combine(userDir, "AppData", "LocalLow");
+                        foreach (var sub in new[] { "360Safe", "360TotalSecurity", "360TotalSecurityLow", "360DesktopLite" })
+                        {
+                            foldersToDelete.Add(Path.Combine(roaming, sub));
+                            foldersToDelete.Add(Path.Combine(local, sub));
+                        }
+                        foreach (var sub in new[] { "360WD", "360MenuMgr", "360Safe", "360TotalSecurity" })
+                            foldersToDelete.Add(Path.Combine(localLow, sub));
+                    }
                 }
-                else
+
+                await Task.Run(() =>
                 {
-                }
+                    foreach (var folder in foldersToDelete)
+                    {
+                        try
+                        {
+                            if (Directory.Exists(folder))
+                                Directory.Delete(folder, true);
+                        }
+                        catch { }
+                    }
+                });
+
+                lblstatus.Text = Properties._string.CompleteExtractionStatus;
+                MessageBox.Show(Properties._string.CleanupCompleteMessage, Properties._string.SuccessTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Application.Exit();
             }
             catch (Exception ex)
             {
-                // Xử lý lỗi nếu có vấn đề về quyền truy cập hoặc hệ thống
-                // CŨ: MessageBox.Show("Lỗi khi cố gắng dọn dẹp: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-                // MỚI: SỬ DỤNG _string
                 string fullErrorMessage = Properties._string.ErrorWhenTryingToCleanup + " " + ex.Message;
-
-                MessageBox.Show(fullErrorMessage,
-                                Properties._string.ErrorTitle,
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Application.Exit();
-                // ...
+                MessageBox.Show(fullErrorMessage, Properties._string.ErrorTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                btnclean.Enabled = true;
             }
         }
     }

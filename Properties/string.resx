@@ -165,6 +165,15 @@
   <data name="NotificationTitle" xml:space="preserve">
     <value>Notification</value>
   </data>
+  <data name="CleaningUp" xml:space="preserve">
+    <value>Cleaning up 360 files...</value>
+  </data>
+  <data name="UninstallComplete" xml:space="preserve">
+    <value>Uninstall complete! Running cleanup...</value>
+  </data>
+  <data name="Uninstalling" xml:space="preserve">
+    <value>Uninstalling 360 Total Security...</value>
+  </data>
   <data name="StartingDownload" xml:space="preserve">
     <value>Starting file download...</value>
   </data>
