@@ -221,5 +221,23 @@ namespace frm360security.Properties {
                 return ResourceManager.GetString("SuccessTitle", resourceCulture);
             }
         }
+
+        internal static string CleaningUp {
+            get {
+                return ResourceManager.GetString("CleaningUp", resourceCulture);
+            }
+        }
+
+        internal static string Uninstalling {
+            get {
+                return ResourceManager.GetString("Uninstalling", resourceCulture);
+            }
+        }
+
+        internal static string UninstallComplete {
+            get {
+                return ResourceManager.GetString("UninstallComplete", resourceCulture);
+            }
+        }
     }
 }

@@ -124,6 +124,15 @@
   <data name="CompleteExtractionStatus" xml:space="preserve">
     <value>Hoàn tất! Đã giải nén và mở thư mục</value>
   </data>
+  <data name="CleaningUp" xml:space="preserve">
+    <value>Đang dọn dẹp file 360...</value>
+  </data>
+  <data name="UninstallComplete" xml:space="preserve">
+    <value>Gỡ cài đặt hoàn tất! Đang dọn dẹp...</value>
+  </data>
+  <data name="Uninstalling" xml:space="preserve">
+    <value>Đang gỡ cài đặt 360 Total Security...</value>
+  </data>
   <data name="DownloadComplete" xml:space="preserve">
     <value>Download hoàn tất!</value>
   </data>
