@@ -76,14 +76,10 @@ jobs:
           } else {
             $targets = Get-ChildItem -Filter *.csproj -Recurse | Where-Object { $_.FullName -notmatch '\\(bin|obj|\.claude|\.vs)\\' }
           }
-          # FrameworkPathOverride must point to an actual runtime directory (not
-          # the v4.8 reference-assembly stubs) so that Resgen.exe can load
-          # System.Drawing.dll at runtime when processing typed .resx resources.
-          $fxRuntime = "C:\Windows\Microsoft.NET\Framework\v4.0.30319"
           foreach ($t in $targets) {
             Write-Host "=== Building $($t.FullName) ==="
             nuget restore $t.FullName -PackagesDirectory (Join-Path $t.DirectoryName "packages")
             msbuild $t.FullName /t:Restore /p:Configuration=Release
-            msbuild $t.FullName /p:Configuration=Release /p:FrameworkPathOverride="$fxRuntime\" /p:ResGenToolPath="$fxRuntime\"
+            msbuild $t.FullName /p:Configuration=Release
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
