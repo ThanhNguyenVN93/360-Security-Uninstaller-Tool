@@ -61,6 +61,20 @@ namespace frm360security
             _lastInstallInfo = DetectInstall();
             ApplyLanguage();
             ModeChanged(this, EventArgs.Empty);
+
+            // Check for updates in background — show WhatsNew if newer version found
+            UpdateChecker.UpdateAvailable += OnUpdateAvailable;
+            UpdateChecker.CheckAsync();
+        }
+
+        private void OnUpdateAvailable(ReleaseInfo release)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<ReleaseInfo>(OnUpdateAvailable), release);
+                return;
+            }
+            new WhatsNewForm(release, IsEnglish).ShowDialog(this);
         }
 
         private InstallInfo DetectInstall()
