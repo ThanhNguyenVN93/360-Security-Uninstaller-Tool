@@ -66,8 +66,6 @@ jobs:
           }
       - name: Restore and build
         shell: pwsh
-        env:
-          FX_REF: C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8
         run: |
           $slnRoot = Get-ChildItem -Filter *.sln
           $csprojRoot = Get-ChildItem -Filter *.csproj
@@ -82,6 +80,6 @@ jobs:
             Write-Host "=== Building $($t.FullName) ==="
             nuget restore $t.FullName -PackagesDirectory (Join-Path $t.DirectoryName "packages")
             msbuild $t.FullName /t:Restore /p:Configuration=Release
-            msbuild $t.FullName /p:Configuration=Release /p:FrameworkPathOverride="$env:FX_REF"
+            msbuild $t.FullName /p:Configuration=Release
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }

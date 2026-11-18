@@ -1,378 +1,475 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.IO;        // Cho Path và File
-using System.Linq;
-using System.Net.Http; // Cho HttpClient
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 using System.Diagnostics;
-using System.Threading;
-using SevenZip;
-using frm360security.Properties;
+using System.IO;
 using System.Management;
-
+using System.Reflection;
+using System.Windows.Forms;
 
 namespace frm360security
 {
     public partial class Form1 : Form
     {
-        private static readonly HttpClient _httpClient = new HttpClient();
-        private const int BufferSize = 40960; // 80 KB
+        private const string DonateUrl = "https://nguyenthanhdev.com/donate/";
+        private const string GitHubUrl = "https://github.com/thanhitma9x/360-Security-Uninstaller-Tool/issues";
+        private const string LogPath = @"C:\360_removal_log.txt";
+        private const string BootScript = "1_boot_safemode.ps1";
+        private const string CleanupScript = "2_cleanup_360.ps1";
+
+        private struct InstallInfo
+        {
+            public bool DirFound;
+            public string UninstallExePath; // null if not found
+        }
+
+        private InstallInfo _lastInstallInfo;
+
         public Form1()
         {
             InitializeComponent();
-            // --- Thiết lập UI ---
-            progressBar1.Minimum = 0;
-            progressBar1.Maximum = 100;
-            progressBar1.Value = 0;
-            lblstatus.Text = "Sẵn sàng...";
-
-            // ĐẶT LINK MẶC ĐỊNH
-            txturl.Text = "https://download.revouninstaller.com/download/revoregistrycleaner/RRC_FreePortable.zip";
-
-            // 1. Lấy đường dẫn tới Desktop
-            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-
-            // 2. Định nghĩa tên thư mục con
-            string folderName = "360_Downloads";
-
-            // 3. Tạo đường dẫn đầy đủ tới thư mục con
-            string saveDirectory = Path.Combine(desktopPath, folderName);
-
-            // 4. Đảm bảo thư mục con tồn tại. Nếu chưa có, nó sẽ được tạo
-            Directory.CreateDirectory(saveDirectory);
-
-            // 5. Lấy tên file từ URL
-            string fileName = Path.GetFileName(txturl.Text);
-
-            // 6. Gán đường dẫn lưu cuối cùng vào txtOutput
-            txtoutput.Text = Path.Combine(saveDirectory, fileName);
+            cmbLang.SelectedIndex = 0; // VI
         }
-        // 1. Phương thức download chính (Logic)
-        public async Task DownloadFileAsync(string url, string outputPath, IProgress<DownloadProgress> progress)
+
+        private bool IsEnglish
         {
-            // Sử dụng ResponseHeadersRead để stream file, không tải toàn bộ vào bộ nhớ
-            using (var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
-            {
-                // Kiểm tra lỗi HTTP (404, 500,...)
-                response.EnsureSuccessStatusCode();
-
-                // Lấy tổng dung lượng file (nếu server hỗ trợ)
-                long? totalBytes = response.Content.Headers.ContentLength;
-
-                using (var contentStream = await response.Content.ReadAsStreamAsync())
-                // Dùng ProgressStream để bao bọc ContentStream và báo cáo tiến trình
-                using (var progressStream = new ProgressStream(contentStream, totalBytes, progress))
-                // Dùng FileStream để ghi vào ổ đĩa
-                using (var fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, useAsync: true))
-                {
-                    // Sao chép dữ liệu từ mạng sang file. ProgressStream sẽ báo cáo tiến trình
-                    await progressStream.CopyToAsync(fileStream, BufferSize);
-                }
-            }
+            get { return cmbLang.SelectedItem != null && cmbLang.SelectedItem.ToString() == "EN"; }
         }
-        private async void btnDownload_Click(object sender, EventArgs e)
-        {
-            string fileUrl = txturl.Text.Trim();
-            string saveDirectory = txtoutput.Text.Trim();
-            string zipFilePath = txtoutput.Text.Trim();
 
-            // 1. Kiểm tra đầu vào
-            if (string.IsNullOrWhiteSpace(fileUrl) || string.IsNullOrWhiteSpace(saveDirectory))
-            {
-                MessageBox.Show("Lỗi: Vui lòng điền đầy đủ LINK và LINK OUT.", "Thông Báo", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            // Khởi tạo Progress để nhận báo cáo từ luồng nền và cập nhật UI (lblStatus, progressBar)
-            var progress = new Progress<DownloadProgress>(UpdateProgressUI);
-
-            try
-            {
-                // Vô hiệu hóa nút để tránh nhấp đúp khi đang tải
-                btnDownload.Enabled = false;
-
-                // Thiết lập trạng thái ban đầu cho UI
-                progressBar1.Value = 0;
-                lblstatus.Text = Properties._string.StartingDownload;
-
-                // BẮT ĐẦU DOWNLOAD BẤT ĐỒNG BỘ
-                await DownloadFileAsync(fileUrl, saveDirectory, progress);
-
-                // HIỂN THỊ KHI HOÀN TẤT
-                lblstatus.Text = Properties._string.DownloadComplete; ;
-                MessageBox.Show(Properties._string.DownloadComplete, Properties._string.SuccessTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                // Đường dẫn thư mục đích (thư mục giải nén sẽ nằm cùng chỗ với file zip)
-                string destinationFolder = Path.GetDirectoryName(zipFilePath);
-
-                // Tên thư mục con (ví dụ: RRC_FreePortable)
-                string zipFileNameWithoutExtension = Path.GetFileNameWithoutExtension(zipFilePath);
-                string extractPath = Path.Combine(destinationFolder, zipFileNameWithoutExtension);
-
-                lblstatus.Text = Properties._string.StartingExtraction;
-
-                // Nếu thư mục giải nén đã tồn tại, xóa nó đi để tránh lỗi
-                if (Directory.Exists(extractPath))
-                {
-                    Directory.Delete(extractPath, true);
-                }
-                // ... (Các định nghĩa extractPath và xóa folder cũ giữ nguyên) ...
-
-                // ----------------------------------------------------
-                // LOGIC GIẢI NÉN SỬ DỤNG SevenZipSharp
-                // ----------------------------------------------------
-
-                lblstatus.Text = Properties._string.Extracting7z;
-
-                try
-                {
-                    // 1. Xác định thư mục DLL (x64 hoặc x86)
-                    string archFolder = (Environment.Is64BitProcess) ? "x64" : "x86";
-
-                    // 2. Tên file DLL: Hầu hết các thư viện gọi nó là "7z.dll"
-                    string nativeDllName = "7z.dll";
-                    // Gói NuGet của 2GIS ERM thường đặt 7z.dll vào cả x64 và x86
-
-                    // 3. Tạo đường dẫn đầy đủ: [App_Path]\[x64/x86]\7z.dll
-                    string dllPath = Path.Combine(Application.StartupPath, archFolder, nativeDllName);
-
-                    // 4. KIỂM TRA ĐƯỜNG DẪN TRƯỚC KHI GỌI: (Để debug chính xác)
-                    if (!File.Exists(dllPath))
-                    {
-                        string dllErrorMessage = string.Format(Properties._string.ErrorDLLNotFound, dllPath);
-                        MessageBox.Show(dllErrorMessage, Properties._string.ErrorDLLTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-                    // 4. Thiết lập đường dẫn thư viện
-                    SevenZipBase.SetLibraryPath(dllPath);
-                    SevenZipExtractor extractor = new SevenZipExtractor(zipFilePath);
-
-                    // Đảm bảo thư mục đích tồn tại
-                    Directory.CreateDirectory(extractPath);
-
-                    // Giải nén tất cả các mục vào thư mục đích
-                    extractor.ExtractArchive(extractPath);
-                }
-                catch (Exception ex)
-                {
-                    // Bắt lỗi giải nén (vì 7z.dll có thể không tìm thấy hoặc lỗi)
-                    string extractErrorMessage = Properties._string.ErrorAdvancedExtraction + $" {ex.Message}";
-                    MessageBox.Show(extractErrorMessage, Properties._string.ErrorTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    lblstatus.Text = Properties._string.ErrorExtractionStatus;
-                    return;
-                }  
-                // 3. MỞ FOLDER
-                Process.Start(extractPath);
-
-                // HIỂN THỊ KHI HOÀN TẤT
-                lblstatus.Text = Properties._string.CompleteExtractionStatus;
-                btnclean.Enabled = true;
-                btnclean.PerformClick();
-                //MessageBox.Show("Download và giải nén hoàn tất!", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (HttpRequestException)
-            {
-                lblstatus.Text = Properties._string.ErrorHTTPRequest; // Lỗi HTTP: Kiểm tra URL hoặc kết nối.
-                MessageBox.Show(Properties._string.ErrorHTTPRequest, // Lỗi kết nối hoặc HTTP: Không thể tải file.
-                                Properties._string.ErrorTitle,
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            catch (Exception ex)
-            {
-                lblstatus.Text = Properties._string.ErrorDownloadProcess; // Lỗi xảy ra trong quá trình download.
-                MessageBox.Show(Properties._string.ErrorTitle + $": {ex.Message}",
-                                Properties._string.ErrorTitle,
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-            }
-            finally
-            {
-                // Khôi phục UI sau khi download hoàn tất hoặc thất bại
-                btnDownload.Enabled = true;
-                progressBar1.Value = progressBar1.Maximum; // Đảm bảo thanh tiến trình đầy
-            }
-        }
-        // Phương thức cập nhật UI (được gọi tự động trên UI thread nhờ Progress<T>)
-        private void UpdateProgressUI(DownloadProgress p)
-        {
-            if (p.ProgressPercentage.HasValue)
-            {
-                int percentageValue = p.ProgressPercentage.Value;
-
-                // Đảm bảo không bị kẹt ở 0% nếu đã tải được một chút
-                if (percentageValue == 0 && p.BytesDownloaded > 0 && p.TotalBytes > 0)
-                {
-                    percentageValue = 1; // Đặt tối thiểu là 1%
-                }
-
-                // Cập nhật ProgressBar và Label
-                progressBar1.Value = percentageValue;
-
-                lblstatus.Text = $"Đang tải... {percentageValue}% ({p.BytesDownloaded:N0} / {p.TotalBytes:N0} bytes)";
-            }
-            // ... (phần else giữ nguyên)
-        }
         private void Form1_Load(object sender, EventArgs e)
         {
-            //hệ điều hành
-            string r = "";
-            using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem"))
+            Program.Kill360Processes();
+            AppendProgress(IsEnglish ? "Ready." : "San sang.");
+
+            // He dieu hanh / Operating system
+            try
             {
-                ManagementObjectCollection information = searcher.Get();
-                if (information != null)
+                string r = "";
+                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem"))
                 {
-                    foreach (ManagementObject obj in information)
+                    foreach (ManagementObject obj in searcher.Get())
                     {
                         r = obj["Caption"].ToString() + " - " + obj["OSArchitecture"].ToString();
                     }
                 }
-                r = r.Replace("NT 5.1.2600", "XP");
-                r = r.Replace("NT 5.2.3790", "Server 2003");
+                r = r.Replace("NT 5.1.2600", "XP").Replace("NT 5.2.3790", "Server 2003");
                 lblinfo.Text = r;
             }
-
-            // Sử dụng thư viện System.IO; và System.Diagnostics;
-            string programFilesPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-
-            // 1. Dùng Path.Combine để ghép đường dẫn an toàn
-            string folderPath = Path.Combine(programFilesPath, "360", "Total Security");
-            string filePath = Path.Combine(folderPath, "Uninstall.exe"); // Phát hiện file đã tồn tại
-            //string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            //string folder=Path.Combine(desktopPath, "360_Downloads");
-
-            try
+            catch
             {
-                // Kiểm tra ĐỦ CẢ 2 điều kiện: Thư mục tồn tại VÀ File Uninstall.exe tồn tại
-                if (Directory.Exists(folderPath) && File.Exists(filePath))
-                {
-                    // 2. CHƯƠNG TRÌNH ĐÃ CÀI ĐẶT
-                    btnuninstall.Enabled = true;    // Cho phép gỡ cài đặt
-                    btnuninstall.PerformClick();      // Tự động nhấn nút Uninstall
-                    //btnDownload.Enabled = true;    // Bật hóa nút Download
-                    //btnDownload.PerformClick();
-                    // KHÔNG sử dụng PerformClick() ở đây
-                }
-                else if (Directory.Exists(folderPath) && !File.Exists(filePath))
-                    {
-                    
-                        // 2.5 TRƯỜNG HỢP THƯ MỤC TỒN TẠI NHƯNG KHÔNG CÓ FILE UNINSTALL.EXE
-                        btnDownload.Enabled = true;    // Bật hóa nút Download
-                        btnDownload.PerformClick();
-                       // btnclean.Enabled = true;
-                        //tnclean.PerformClick();
-                    }
-                    // 3. CHƯƠNG TRÌNH CHƯA CÀI ĐẶT
-                    else
-                {
-                    //MessageBox.Show("Chưa cài đặt 360 Total Security.", "Thông Báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                lblinfo.Text = Environment.OSVersion.VersionString;
+            }
 
-                    btnclean.Enabled = true;
-                            btnclean.PerformClick();
-                            btnDownload.Enabled = false;
-                   
-                    // Bạn có thể kích hoạt tự động download nếu muốn:
-                    // btnDownload.PerformClick(); 
-                }
-            }
-            catch (Exception ex)
-            {
-                // Xử lý lỗi nếu có vấn đề về quyền truy cập hoặc hệ thống
-                MessageBox.Show($"Lỗi kiểm tra trạng thái: {ex.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                // ...
-            }
-        }
-        private async void btnuninstall_Click(object sender, EventArgs e)
-        {
-            string programFilesPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-            string folderPath = Path.Combine(programFilesPath, "360", "Total Security");
-            string filePath = Path.Combine(folderPath, "Uninstall.exe");
-            try
-            {
-                if (Directory.Exists(folderPath) && File.Exists(filePath))
-                {
-                    btnuninstall.Enabled = false;
-                    lblstatus.Text = Properties._string.Uninstalling;
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        FileName = filePath,
-                        Arguments = "/S",
-                        UseShellExecute = true,
-                        Verb = "runas"
-                    };
-                    Process uninstallProcess = Process.Start(startInfo);
-                    await Task.Run(() => uninstallProcess.WaitForExit());
-                    lblstatus.Text = Properties._string.UninstallComplete;
-                    btnclean.Enabled = true;
-                    btnclean.PerformClick();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Lỗi khi cố gắng gỡ cài đặt: {ex.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                btnuninstall.Enabled = true;
-            }
+            _lastInstallInfo = DetectInstall();
+            ApplyLanguage();
+            ModeChanged(this, EventArgs.Empty);
+
+            // Sync version label with AssemblyFileVersion
+            Version v = Assembly.GetExecutingAssembly().GetName().Version;
+            lblVersion.Text = string.Format("v{0}.{1}.{2}", v.Major, v.Minor, v.Build);
+
+            // Check for updates in background — show WhatsNew if newer version found
+            UpdateChecker.UpdateAvailable += OnUpdateAvailable;
+            UpdateChecker.CheckAsync();
         }
 
-        private async void btnclean_Click(object sender, EventArgs e)
+        private void OnUpdateAvailable(ReleaseInfo release)
         {
-            try
+            if (InvokeRequired)
             {
-                btnclean.Enabled = false;
-                lblstatus.Text = Properties._string.CleaningUp;
+                BeginInvoke(new Action<ReleaseInfo>(OnUpdateAvailable), release);
+                return;
+            }
+            new WhatsNewForm(release, IsEnglish).ShowDialog(this);
+        }
 
-                var foldersToDelete = new System.Collections.Generic.List<string>();
-                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "360"));
-                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360Safe"));
-                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360"));
-                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360TotalSecurity"));
-                foldersToDelete.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "360Quarant"));
-                foldersToDelete.Add(@"C:\360SANDBOX");
-
-                string usersRoot = Path.GetDirectoryName(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-                if (Directory.Exists(usersRoot))
+        private InstallInfo DetectInstall()
+        {
+            InstallInfo info = new InstallInfo();
+            // Environment.SpecialFolder.ProgramFilesX86 doi hoi .NET 4.0+, nen
+            // tu lay qua bien moi truong de tuong thich .NET 3.5 (co san tren Win7).
+            string pfx86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)");
+            string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string[] roots = string.IsNullOrEmpty(pfx86)
+                ? new[] { pf }
+                : new[] { pfx86, pf };
+            foreach (string root in roots)
+            {
+                if (string.IsNullOrEmpty(root)) continue;
+                string folderPath = Path.Combine(Path.Combine(root, "360"), "Total Security");
+                string filePath = Path.Combine(folderPath, "Uninstall.exe");
+                if (Directory.Exists(folderPath))
                 {
-                    foreach (var userDir in Directory.GetDirectories(usersRoot))
+                    info.DirFound = true;
+                    if (File.Exists(filePath))
                     {
-                        string roaming = Path.Combine(userDir, "AppData", "Roaming");
-                        string local = Path.Combine(userDir, "AppData", "Local");
-                        string localLow = Path.Combine(userDir, "AppData", "LocalLow");
-                        foreach (var sub in new[] { "360Safe", "360TotalSecurity", "360TotalSecurityLow", "360DesktopLite" })
-                        {
-                            foldersToDelete.Add(Path.Combine(roaming, sub));
-                            foldersToDelete.Add(Path.Combine(local, sub));
-                        }
-                        foreach (var sub in new[] { "360WD", "360MenuMgr", "360Safe", "360TotalSecurity" })
-                            foldersToDelete.Add(Path.Combine(localLow, sub));
+                        info.UninstallExePath = filePath;
+                        return info;
                     }
                 }
+            }
+            return info;
+        }
 
-                await Task.Run(() =>
+        // Cap nhat toan bo text giao dien theo ngon ngu dang chon
+        private void ApplyLanguage()
+        {
+            bool en = IsEnglish;
+
+            grbstatus.Text = en ? "STATUS" : "TRANG THAI";
+            grbmode.Text = en ? "EXECUTION MODE" : "CHE DO THUC HIEN";
+            rbAuto.Text = en ? "Automatic (recommended) - one click" : "Tu dong (khuyen nghi) - 1 cham xong";
+            rbManual.Text = en ? "Manual - choose each step" : "Thu cong - tu chon tung buoc";
+            grbactions.Text = en ? "ACTIONS" : "THUC HIEN";
+            lblAutoHint.Text = en
+                ? "One click: reboot into Safe Mode, completely remove all 360 files/registry, then reboot back to Normal Mode automatically."
+                : "1 cham: khoi dong lai vao Safe Mode, xoa sach toan bo file/registry cua 360, tu dong quay lai Normal Mode.";
+            btnAutoStart.Text = en ? "START REMOVING 360 TOTAL SECURITY" : "BAT DAU GO BO 360 TOTAL SECURITY";
+            btnManualUninstall.Text = en ? "1. Run official uninstaller" : "1. Go cai dat chinh thuc";
+            btnManualSafeClean.Text = en ? "2. Boot Safe Mode && Clean up" : "2. Khoi dong Safe Mode && Don dep";
+            btnViewLog.Text = en ? "View Log" : "Xem Log";
+            chkRestorePoint.Text = en
+                ? "Create a system restore point before cleaning (recommended)"
+                : "Tao diem khoi phuc he thong truoc khi don dep (khuyen nghi)";
+            btnDonate.Text = en ? "Support the author" : "Ung ho tac gia";
+            linkReport.Text = en ? "Report a bug / Contribute (GitHub)" : "Bao loi / Dong gop (GitHub)";
+            grbprogress.Text = en ? "PROGRESS" : "TIEN TRINH";
+
+            RefreshDetectLabel();
+        }
+
+        private void RefreshDetectLabel()
+        {
+            bool en = IsEnglish;
+            if (_lastInstallInfo.DirFound && _lastInstallInfo.UninstallExePath != null)
+            {
+                lblDetect.ForeColor = System.Drawing.Color.FromArgb(192, 0, 0);
+                lblDetect.Text = en
+                    ? "360 Total Security is currently installed."
+                    : "Da phat hien 360 Total Security dang cai dat tren may.";
+            }
+            else if (_lastInstallInfo.DirFound)
+            {
+                lblDetect.ForeColor = System.Drawing.Color.DarkOrange;
+                lblDetect.Text = en
+                    ? "Found a 360 folder but Uninstall.exe is missing (possibly already partially removed)."
+                    : "Phat hien thu muc 360 nhung thieu Uninstall.exe (co the da go mot phan).";
+            }
+            else
+            {
+                lblDetect.ForeColor = System.Drawing.Color.FromArgb(0, 128, 0);
+                lblDetect.Text = en
+                    ? "No active 360 Total Security installation detected (leftovers may still remain)."
+                    : "Khong phat hien 360 Total Security dang cai dat (co the chi con file rac).";
+            }
+        }
+
+        private void cmbLang_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            ApplyLanguage();
+        }
+
+        private void ModeChanged(object sender, EventArgs e)
+        {
+            bool auto = rbAuto.Checked;
+            btnAutoStart.Visible = auto;
+            lblAutoHint.Visible = auto;
+            btnManualUninstall.Visible = !auto;
+            btnManualSafeClean.Visible = !auto;
+        }
+
+        // Ghi 1 dong vao o "Tien trinh" tren form, kem gio:phut:giay
+        private void AppendProgress(string message)
+        {
+            string line = DateTime.Now.ToString("HH:mm:ss") + "  " + message;
+            txtProgress.AppendText((txtProgress.TextLength == 0 ? "" : Environment.NewLine) + line);
+            txtProgress.SelectionStart = txtProgress.TextLength;
+            txtProgress.ScrollToCaret();
+            Application.DoEvents();
+        }
+
+        private string SelectedLang()
+        {
+            return cmbLang.SelectedItem != null ? cmbLang.SelectedItem.ToString() : "VI";
+        }
+
+        // Giai nen 2 script PowerShell (nhung san trong exe) ra thu muc tam,
+        // de khong can keo theo file .ps1 rieng khi phat hanh.
+        private string ExtractScripts()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "360UninstallerTool");
+            Directory.CreateDirectory(dir);
+            ExtractResource(BootScript, dir);
+            ExtractResource(CleanupScript, dir);
+            return Path.Combine(dir, BootScript);
+        }
+
+        private void ExtractResource(string logicalName, string targetDir)
+        {
+            Assembly asm = Assembly.GetExecutingAssembly();
+            using (Stream stream = asm.GetManifestResourceStream(logicalName))
+            {
+                if (stream == null)
                 {
-                    foreach (var folder in foldersToDelete)
+                    throw new FileNotFoundException("Embedded resource not found: " + logicalName);
+                }
+                string outPath = Path.Combine(targetDir, logicalName);
+                using (FileStream fs = new FileStream(outPath, FileMode.Create, FileAccess.Write))
+                {
+                    // Stream.CopyTo doi hoi .NET 4.0+, tu copy bang buffer de tuong thich .NET 3.5
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
                     {
-                        try
-                        {
-                            if (Directory.Exists(folder))
-                                Directory.Delete(folder, true);
-                        }
-                        catch { }
+                        fs.Write(buffer, 0, read);
                     }
-                });
+                }
+            }
+        }
 
-                lblstatus.Text = Properties._string.CompleteExtractionStatus;
-                MessageBox.Show(Properties._string.CleanupCompleteMessage, Properties._string.SuccessTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                Application.Exit();
+        // Chay 1 tien trinh va cho hoan tat, tra ve true neu thanh cong.
+        // hidden = an cua so console (dung cho powershell.exe chay ngam).
+        private bool RunAndWait(string fileName, string arguments, bool asAdmin, bool hidden, out string errorMessage)
+        {
+            errorMessage = null;
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments,
+                    UseShellExecute = true,
+                    WindowStyle = hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal
+                };
+                if (asAdmin) startInfo.Verb = "runas";
+                using (Process p = Process.Start(startInfo))
+                {
+                    p.WaitForExit();
+                    return true;
+                }
             }
             catch (Exception ex)
             {
-                string fullErrorMessage = Properties._string.ErrorWhenTryingToCleanup + " " + ex.Message;
-                MessageBox.Show(fullErrorMessage, Properties._string.ErrorTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                btnclean.Enabled = true;
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        // Tao diem khoi phuc he thong (best-effort, khong chan luong neu loi)
+        private void TryCreateRestorePoint()
+        {
+            bool en = IsEnglish;
+            AppendProgress(en ? "Creating system restore point..." : "Dang tao diem khoi phuc he thong...");
+            string args = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -Command \"Checkpoint-Computer -Description '360 Uninstaller Tool' -RestorePointType 'MODIFY_SETTINGS'\"";
+            string err;
+            bool ok = RunAndWait("powershell.exe", args, false, true, out err);
+            AppendProgress(ok
+                ? (en ? "Restore point step finished." : "Da xu ly xong buoc tao diem khoi phuc.")
+                : (en ? "Could not create restore point: " + err : "Khong tao duoc diem khoi phuc: " + err));
+        }
+
+        // Chay trinh go cai dat chinh thuc cua 360 (silent)
+        private bool RunOfficialUninstall()
+        {
+            bool en = IsEnglish;
+            InstallInfo info = DetectInstall();
+            if (info.UninstallExePath == null)
+            {
+                AppendProgress(en ? "No official uninstaller found - skipped." : "Khong tim thay trinh go cai dat chinh thuc - bo qua.");
+                MessageBox.Show(
+                    en
+                        ? "Official uninstaller (Uninstall.exe) not found. 360 may already be partially removed - use \"Boot Safe Mode & Clean up\" to remove the remaining leftovers."
+                        : "Khong tim thay trinh go cai dat chinh thuc (Uninstall.exe). Co the 360 da bi go mot phan - hay dung chuc nang \"Khoi dong Safe Mode & Don dep\" de xoa sach con sot.",
+                    en ? "Notice" : "Thong bao", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return false;
+            }
+
+            AppendProgress(en ? "Running official uninstaller..." : "Dang go cai dat chinh thuc...");
+            string err;
+            bool ok = RunAndWait(info.UninstallExePath, "/S", true, true, out err);
+            if (ok)
+            {
+                AppendProgress(en ? "Official uninstall step finished." : "Da go cai dat chinh thuc xong.");
+            }
+            else
+            {
+                AppendProgress((en ? "Uninstall error: " : "Loi go cai dat: ") + err);
+                MessageBox.Show((en ? "Error while uninstalling: " : "Loi khi go cai dat: ") + err,
+                    en ? "Error" : "Loi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            return ok;
+        }
+
+        // Khoi dong pipeline Safe Mode: giai nen 2 script, chay 1_boot_safemode.ps1
+        // (no se tu reboot may, chay 2_cleanup_360.ps1 as SYSTEM trong Safe Mode,
+        // roi tu reboot lai Normal Mode).
+        private bool LaunchSafeModeCleanup()
+        {
+            bool en = IsEnglish;
+
+            string scriptPath;
+            try
+            {
+                AppendProgress(en ? "Preparing cleanup scripts..." : "Dang chuan bi script don dep...");
+                scriptPath = ExtractScripts();
+            }
+            catch (Exception ex)
+            {
+                AppendProgress((en ? "Error preparing scripts: " : "Loi chuan bi script: ") + ex.Message);
+                MessageBox.Show((en ? "Error preparing scripts: " : "Loi chuan bi script: ") + ex.Message,
+                    en ? "Error" : "Loi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            string args = string.Format(
+                "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File \"{0}\" -Lang {1}",
+                scriptPath, SelectedLang());
+
+            AppendProgress(en ? "Starting Safe Mode cleanup (the computer will reboot)..." : "Dang khoi dong don dep Safe Mode (may se khoi dong lai)...");
+            string err;
+            bool ok = RunAndWait("powershell.exe", args, true, true, out err);
+            if (!ok)
+            {
+                AppendProgress((en ? "Error starting cleanup: " : "Loi khi khoi chay don dep: ") + err);
+                MessageBox.Show((en ? "Error starting cleanup: " : "Loi khi khoi chay don dep: ") + err,
+                    en ? "Error" : "Loi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            AppendProgress(en ? "Safe Mode cleanup triggered. Waiting for automatic reboot..." : "Da kich hoat don dep Safe Mode. Dang cho may tu khoi dong lai...");
+            MessageBox.Show(
+                en
+                    ? "Cleanup process started. The computer will automatically reboot into Safe Mode, remove 360 Total Security, then reboot back to Normal Mode.\n\nPlease do not turn off the computer during this process."
+                    : "Da khoi dong qua trinh don dep. May se tu dong khoi dong lai vao Safe Mode, don sach 360 Total Security, roi tu dong khoi dong lai Normal Mode.\n\nVui long khong tat may trong qua trinh nay.",
+                en ? "Processing" : "Dang xu ly", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return true;
+        }
+
+        private void btnAutoStart_Click(object sender, EventArgs e)
+        {
+            bool en = IsEnglish;
+            string msg = en
+                ? "AUTOMATIC mode will:\n" +
+                  (chkRestorePoint.Checked ? "  1) Create a system restore point\n" : "") +
+                  (chkRestorePoint.Checked ? "  2)" : "  1)") + " Reboot into Safe Mode to completely remove all 360 files, folders and registry entries\n" +
+                  (chkRestorePoint.Checked ? "  3)" : "  2)") + " Automatically reboot back to Normal Mode\n\n" +
+                  "The computer will REBOOT. Please save your work first.\n" +
+                  "Are you sure you want to continue?"
+                : "Che do TU DONG se thuc hien theo thu tu:\n" +
+                  (chkRestorePoint.Checked ? "  1) Tao diem khoi phuc he thong\n" : "") +
+                  (chkRestorePoint.Checked ? "  2)" : "  1)") + " Khoi dong lai vao Safe Mode de xoa sach toan bo file, thu muc va registry cua 360\n" +
+                  (chkRestorePoint.Checked ? "  3)" : "  2)") + " Tu dong khoi dong lai Normal Mode\n\n" +
+                  "May se KHOI DONG LAI. Hay luu cong viec truoc khi tiep tuc.\n" +
+                  "Ban co chac chan muon bat dau?";
+
+            var confirm = MessageBox.Show(msg, en ? "Confirm" : "Xac nhan", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (confirm != DialogResult.Yes) return;
+
+            btnAutoStart.Enabled = false;
+            try
+            {
+                if (chkRestorePoint.Checked)
+                {
+                    TryCreateRestorePoint();
+                }
+
+                LaunchSafeModeCleanup();
+            }
+            finally
+            {
+                btnAutoStart.Enabled = true;
+            }
+        }
+
+        private void btnManualUninstall_Click(object sender, EventArgs e)
+        {
+            bool en = IsEnglish;
+            var confirm = MessageBox.Show(
+                en
+                    ? "Run the official 360 Total Security uninstaller (no Safe Mode reboot)?"
+                    : "Chay trinh go cai dat chinh thuc cua 360 Total Security (khong khoi dong lai Safe Mode)?",
+                en ? "Confirm" : "Xac nhan", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (confirm != DialogResult.Yes) return;
+
+            btnManualUninstall.Enabled = false;
+            try
+            {
+                RunOfficialUninstall();
+            }
+            finally
+            {
+                btnManualUninstall.Enabled = true;
+            }
+        }
+
+        private void btnManualSafeClean_Click(object sender, EventArgs e)
+        {
+            bool en = IsEnglish;
+            var confirm = MessageBox.Show(
+                en
+                    ? "This will reboot into Safe Mode to remove remaining 360 files/registry entries, then automatically reboot back to Normal Mode.\n\nThe computer will REBOOT. Please save your work first.\nAre you sure you want to continue?"
+                    : "Thao tac nay se khoi dong lai may vao Safe Mode de don sach file/registry con sot cua 360, sau do tu dong khoi dong lai Normal Mode.\n\nMay se KHOI DONG LAI. Hay luu cong viec truoc khi tiep tuc.\nBan co chac chan muon tiep tuc?",
+                en ? "Confirm" : "Xac nhan", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (confirm != DialogResult.Yes) return;
+
+            btnManualSafeClean.Enabled = false;
+            try
+            {
+                if (chkRestorePoint.Checked)
+                {
+                    TryCreateRestorePoint();
+                }
+                LaunchSafeModeCleanup();
+            }
+            finally
+            {
+                btnManualSafeClean.Enabled = true;
+            }
+        }
+
+        private void btnViewLog_Click(object sender, EventArgs e)
+        {
+            bool en = IsEnglish;
+            if (!File.Exists(LogPath))
+            {
+                MessageBox.Show(
+                    en
+                        ? "No log file yet (" + LogPath + "). Run \"Boot Safe Mode & Clean up\" first."
+                        : "Chua co file log (" + LogPath + "). Hay chay chuc nang \"Khoi dong Safe Mode & Don dep\" truoc.",
+                    en ? "Notice" : "Thong bao", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                Process.Start("notepad.exe", LogPath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show((en ? "Could not open log: " : "Khong mo duoc log: ") + ex.Message,
+                    en ? "Error" : "Loi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnDonate_Click(object sender, EventArgs e)
+        {
+            OpenUrl(DonateUrl);
+        }
+
+        private void linkReport_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            OpenUrl(GitHubUrl);
+        }
+
+        private void OpenUrl(string url)
+        {
+            bool en = IsEnglish;
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show((en ? "Could not open link: " : "Khong mo duoc lien ket: ") + ex.Message,
+                    en ? "Error" : "Loi", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }
