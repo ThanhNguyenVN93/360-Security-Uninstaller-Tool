@@ -15,12 +15,45 @@ using System.Threading;
 using SevenZip;
 using frm360security.Properties;
 using System.Management;
+using System.Runtime.InteropServices;
+using System.ServiceProcess;
 
 
 namespace frm360security
 {
     public partial class Form1 : Form
     {
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        private const uint WM_CLOSE = 0x0010;
+        private const uint WM_QUIT = 0x0012;
+
+        private static readonly string[] ProcessNames360 = new[]
+        {
+            "QHWatchdog", "QHActiveDefense", "QHSafeTray",
+            "360Tray", "360tray", "360Safe", "360safe",
+            "360rp", "360sd", "360leakfixer",
+            "PopWndLog", "360speedld", "SoftMgrLite",
+            "360InstantSetup", "360Chrome", "360SE",
+            "360DeskAnti", "360Protect", "ZhuDongFangYu",
+            "deepscan", "360NetSpeed",
+            "LiveUpdate360", "360TsLiveUpd",
+            "360LiveUpd", "360TS_Setup"
+        };
+
+        private static readonly string[] ServiceNames360 = new[]
+        {
+            "QHActiveDefense", "QHProtected", "QHWatchdog",
+            "ZhuDongFangYu", "360rp", "QHWSCSVC",
+            "360AntiHijacking", "360Safeguard",
+            "360rps", "360SpeedLD", "QHSafeMain",
+            "360netmon", "AviraPhantomVPN"
+        };
+
         private static readonly HttpClient _httpClient = new HttpClient();
         private const int BufferSize = 40960; // 80 KB
         public Form1()
@@ -53,6 +86,127 @@ namespace frm360security
             // 6. Gán đường dẫn lưu cuối cùng vào txtOutput
             txtoutput.Text = Path.Combine(saveDirectory, fileName);
         }
+        private async Task Kill360ProcessesAsync()
+        {
+            await Task.Run(() =>
+            {
+                // Step 1: Try graceful exit via tray window messages
+                try
+                {
+                    foreach (var proc in Process.GetProcessesByName("360Tray"))
+                    {
+                        if (proc.MainWindowHandle != IntPtr.Zero)
+                        {
+                            PostMessage(proc.MainWindowHandle, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                        }
+                    }
+                    foreach (var proc in Process.GetProcessesByName("QHSafeTray"))
+                    {
+                        if (proc.MainWindowHandle != IntPtr.Zero)
+                        {
+                            PostMessage(proc.MainWindowHandle, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                        }
+                    }
+                    Thread.Sleep(2000);
+                }
+                catch { }
+
+                // Step 2: Stop all 360 services (they restart processes)
+                foreach (string svcName in ServiceNames360)
+                {
+                    try
+                    {
+                        using (var sc = new ServiceController(svcName))
+                        {
+                            if (sc.Status == ServiceControllerStatus.Running ||
+                                sc.Status == ServiceControllerStatus.Paused)
+                            {
+                                sc.Stop();
+                                sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // Step 3: Use sc.exe to disable services (prevents restart)
+                foreach (string svcName in ServiceNames360)
+                {
+                    try
+                    {
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = "sc.exe",
+                            Arguments = $"config \"{svcName}\" start= disabled",
+                            UseShellExecute = false,
+                            CreateNoWindow = true,
+                            RedirectStandardOutput = true
+                        };
+                        using (var p = Process.Start(psi))
+                            p.WaitForExit(5000);
+                    }
+                    catch { }
+                }
+
+                // Step 4: taskkill /F /T for each process
+                foreach (string procName in ProcessNames360)
+                {
+                    try
+                    {
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = "taskkill",
+                            Arguments = $"/F /IM {procName}.exe /T",
+                            UseShellExecute = false,
+                            CreateNoWindow = true,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        };
+                        using (var p = Process.Start(psi))
+                            p.WaitForExit(5000);
+                    }
+                    catch { }
+                }
+
+                // Step 5: Also try via WMI (bypasses some protections)
+                try
+                {
+                    foreach (string procName in ProcessNames360)
+                    {
+                        using (var searcher = new ManagementObjectSearcher(
+                            $"SELECT * FROM Win32_Process WHERE Name = '{procName}.exe'"))
+                        {
+                            foreach (ManagementObject obj in searcher.Get())
+                            {
+                                try { obj.InvokeMethod("Terminate", null); }
+                                catch { }
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // Step 6: Final aggressive kill with wmic (works on Win7+)
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "wmic",
+                        Arguments = "process where \"name like '%360%' or name like '%QH%' or name like '%ZhuDong%'\" call terminate",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+                    using (var p = Process.Start(psi))
+                        p.WaitForExit(10000);
+                }
+                catch { }
+
+                Thread.Sleep(1000);
+            });
+        }
+
         // 1. Phương thức download chính (Logic)
         public async Task DownloadFileAsync(string url, string outputPath, IProgress<DownloadProgress> progress)
         {
@@ -296,6 +450,11 @@ namespace frm360security
                 if (Directory.Exists(folderPath) && File.Exists(filePath))
                 {
                     btnuninstall.Enabled = false;
+
+                    // Kill all 360 processes and services first
+                    lblstatus.Text = "Đang tắt các tiến trình 360...";
+                    await Kill360ProcessesAsync();
+
                     lblstatus.Text = Properties._string.Uninstalling;
                     ProcessStartInfo startInfo = new ProcessStartInfo
                     {
@@ -323,6 +482,9 @@ namespace frm360security
             try
             {
                 btnclean.Enabled = false;
+                lblstatus.Text = "Đang tắt các tiến trình 360 còn lại...";
+                await Kill360ProcessesAsync();
+
                 lblstatus.Text = Properties._string.CleaningUp;
 
                 var foldersToDelete = new System.Collections.Generic.List<string>();
