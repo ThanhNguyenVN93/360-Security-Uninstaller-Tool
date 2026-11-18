@@ -62,6 +62,10 @@ namespace frm360security
             ApplyLanguage();
             ModeChanged(this, EventArgs.Empty);
 
+            // Sync version label with AssemblyFileVersion
+            Version v = Assembly.GetExecutingAssembly().GetName().Version;
+            lblVersion.Text = string.Format("v{0}.{1}.{2}", v.Major, v.Minor, v.Build);
+
             // Check for updates in background — show WhatsNew if newer version found
             UpdateChecker.UpdateAvailable += OnUpdateAvailable;
             UpdateChecker.CheckAsync();
