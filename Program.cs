@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace frm360security
@@ -9,10 +10,23 @@ namespace frm360security
         [STAThread]
         static void Main()
         {
-            Kill360Processes();
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Form1());
+            bool createdNew;
+            using (new Mutex(true, "360SecurityUninstallerTool_SingleInstance", out createdNew))
+            {
+                if (!createdNew)
+                {
+                    MessageBox.Show(
+                        "360 Uninstaller Tool is already running.",
+                        "Already Running",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
+                Kill360Processes();
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new Form1());
+            }
         }
 
         internal static void Kill360Processes()
