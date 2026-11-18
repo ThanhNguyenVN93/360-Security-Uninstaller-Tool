@@ -82,6 +82,6 @@ jobs:
             Write-Host "=== Building $($t.FullName) ==="
             nuget restore $t.FullName -PackagesDirectory (Join-Path $t.DirectoryName "packages")
             msbuild $t.FullName /t:Restore /p:Configuration=Release
-            msbuild $t.FullName /p:Configuration=Release /p:FrameworkPathOverride="$env:FX_REF"
+            msbuild $t.FullName /p:Configuration=Release /p:FrameworkPathOverride="$env:FX_REF" /p:ResGenToolPath="C:\Windows\Microsoft.NET\Framework\v4.0.30319\"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
