@@ -34,18 +34,22 @@ namespace frm360security
 
         private static readonly string[] ProcessNames360 = new[]
         {
-            "360Tray", "360tray", "QHSafeTray", "QHActiveDefense",
-            "360Safe", "360safe", "360rp", "360sd",
-            "360leakfixer", "PopWndLog", "360speedld",
-            "SoftMgrLite", "360InstantSetup", "360Chrome",
-            "360SE", "360DeskAnti", "360Protect",
-            "ZhuDongFangYu", "deepscan", "360NetSpeed"
+            "QHWatchdog", "QHActiveDefense", "QHSafeTray",
+            "360Tray", "360tray", "360Safe", "360safe",
+            "360rp", "360sd", "360leakfixer",
+            "PopWndLog", "360speedld", "SoftMgrLite",
+            "360InstantSetup", "360Chrome", "360SE",
+            "360DeskAnti", "360Protect", "ZhuDongFangYu",
+            "deepscan", "360NetSpeed",
+            "LiveUpdate360", "360TsLiveUpd",
+            "360LiveUpd", "360TS_Setup"
         };
 
         private static readonly string[] ServiceNames360 = new[]
         {
-            "ZhuDongFangYu", "360rp", "QHActiveDefense",
-            "QHWSCSVC", "360AntiHijacking", "360Safeguard",
+            "QHActiveDefense", "QHProtected", "QHWatchdog",
+            "ZhuDongFangYu", "360rp", "QHWSCSVC",
+            "360AntiHijacking", "360Safeguard",
             "360rps", "360SpeedLD", "QHSafeMain",
             "360netmon", "AviraPhantomVPN"
         };
